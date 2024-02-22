@@ -1,0 +1,65 @@
+# Configure the Google Cloud provider
+provider "google" {
+  # Specify necessary authentication details if not using default credentials
+}
+
+# Create a GKE cluster
+resource "google_container_cluster" "gke_cluster" {
+  name               = "karpenter-demo-cluster"
+  location           = "us-central1"
+  description        = "GKE Cluster for Karpenter demo"
+  initial_node_count = 1
+
+  # Define the cluster network and subnetwork
+  network    = "default"
+  subnetwork = "default"
+
+  # Remove default node pool and create separate node pools if needed
+  remove_default_node_pool = true
+
+  # Add any additional fields like `node_version`, `addons_config`, `ip_allocation_policy`, etc. below
+  # node_version = "1.21"
+  # addons_config {
+  #   http_load_balancing {
+  #     disabled = true
+  #   }
+  #   kubernetes_dashboard {
+  #     disabled = true
+  #   }
+  # }
+}
+
+# Set up the Kubernetes provider
+provider "kubernetes" {
+  load_config_file       = false
+  host                   = "https://${google_container_cluster.gke_cluster.endpoint}"
+  token                  = data.google_client_config.default.access_token
+  cluster_ca_certificate = base64decode(google_container_cluster.gke_cluster.master_auth[0].cluster_ca_certificate)
+}
+
+# Get credentials necessary to interact with Google's API
+data "google_client_config" "default" {}
+
+# Deploy Karpenter's Helm chart to the GKE cluster using the Helm provider
+resource "helm_release" "karpenter" {
+  name       = "karpenter"
+  repository = "https://charts.karpenter.sh"
+  version    = "0.4.3" # Specify the version of Karpenter you wish to deploy
+  chart      = "karpenter"
+  namespace  = "karpenter"
+
+  # Here you can specify any values you want to override, by using a set block or by providing a custom values file
+  # set {
+  #   name  = "someParameter"
+  #   value = "someValue"
+  # }
+}
+
+# Export the cluster name and Karpenter Helm release status
+output "cluster_name" {
+  value = google_container_cluster.gke_cluster.name
+}
+
+output "karpenter_status" {
+  value = helm_release.karpenter.status
+}
